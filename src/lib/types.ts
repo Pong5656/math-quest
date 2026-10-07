@@ -1,78 +1,77 @@
-// ===== ชนิดข้อมูลหลักของ MATH QUEST =====
+// ชนิดข้อมูลหลักของ MATH QUEST (คำอธิบายภาษาไทยทั้งหมด)
 
-/** ระดับความยาก: 1 = 🟢 ง่าย, 2 = 🟡 กลาง, 3 = 🔴 ยาก (แนว A-Level) */
-export type Diff = 1 | 2 | 3;
+/** ระดับความยากของโจทย์ 🟢 ง่าย 🟡 กลาง 🔴 ยาก */
+export type Difficulty = "easy" | "medium" | "hard";
 
-/** โจทย์ปรนัย 4 ตัวเลือก */
+/** โจทย์ปรนัย 4 ตัวเลือก พร้อมเฉลยทีละขั้น + ทริก + สูตรที่ใช้ */
 export interface Question {
   id: string;
-  lv: Diff;
-  q: string; // ใช้ $...$ ครอบสมการ KaTeX
-  ch: string[]; // ตัวเลือก 4 ข้อ
-  a: number; // index ของคำตอบที่ถูก
-  steps: string[]; // วิธีทำทีละขั้น
-  trick: string; // ทริกคิดลัด
-  formula: string; // สูตรที่ใช้
+  diff: Difficulty;
+  /** เนื้อโจทย์ (รองรับ \( \) และ \[ \] สำหรับ KaTeX) */
+  q: string;
+  options: string[];
+  /** ดัชนีคำตอบที่ถูกต้อง (0-3) */
+  answer: number;
+  /** วิธีทำทีละขั้น */
+  steps: string[];
+  /** ทริกคิดลัด */
+  trick: string;
+  /** สูตรที่ใช้ (LaTeX) */
+  formula: string;
+  topic?: string;
 }
 
-/** การ์ดสเต็ปในหน้าเรียน */
+/** การ์ดสเต็ปการสอนในหน้า /study */
 export interface StudyStep {
-  no: number; // 0..5
+  key: string; // step0..step5
   icon: string;
   title: string;
-  color: string; // class พื้นหลังของการ์ด
-  lines: string[]; // เนื้อหาแต่ละบรรทัด (รองรับ $...$)
+  tone: string; // คลาสสีพื้นหลังของการ์ด
+  lines: string[]; // เนื้อหาแต่ละบรรทัด
+  box?: { title: string; lines: string[] }; // กล่องเน้น (สูตร / ทริก / จุดพลาด)
 }
 
-/** สูตรในคลังสูตร */
+/** การ์ดสูตรในคลังสูตร */
 export interface Formula {
+  id: string;
   name: string;
-  latex: string; // สมการ KaTeX (ไม่ต้องครอบ $)
+  tex: string; // สมการ KaTeX
   memory: string; // วิธีจำ (mnemonic)
   proof: string; // พิสูจน์ย่อ
   example: string; // ตัวอย่าง 1 ข้อ
-  ans: string; // เฉลยตัวอย่าง
-}
-
-/** ตัวควบคุมของมินิเกมแต่ละรูปแบบ */
-export type MiniControl =
-  | { type: "choice"; options: string[]; answer: number }
-  | { type: "multi"; options: string[]; answer: number[]; note?: string }
-  | { type: "toggles"; labels: string[]; target: boolean[] }
-  | { type: "sliders"; params: { key: string; label: string; min: number; max: number; step: number; target: number }[] }
-  | { type: "input"; answer: number; tol?: number; unit?: string };
-
-export interface MiniRound {
-  title: string;
-  prompt: string;
-  control: MiniControl;
-  explain: string; // อธิบายหลังตอบ
 }
 
 /** มินิเกมประจำบท */
-export interface MiniGame {
+export interface MiniGameInfo {
+  kind: string; // ชื่อชนิดมินิเกม (ไม่ซ้ำกันแต่ละบท)
   title: string;
-  emoji: string;
-  story: string;
-  rounds: MiniRound[];
+  desc: string;
 }
 
-/** บทเรียน 1 บท */
+/** 1 บทเรียน */
 export interface Chapter {
   id: string; // เช่น m4l1c1
-  grade: "ม.4" | "ม.5" | "ม.6";
+  level: "m4" | "m5" | "m6";
   book: 1 | 2;
-  num: number;
+  no: number;
   title: string;
-  short: string; // ชื่อสั้น
+  subtitle: string;
+  color: string; // สีประจำบท
   emoji: string;
-  color: string; // สีธีมของบท (class tailwind)
-  objectives: string[]; // จุดประสงค์ตาม สสวท.
-  study: StudyStep[]; // สเต็ปสอน 6 ใบ
+  objectives: string[]; // จุดประสงค์การเรียนรู้ตาม สสวท.
+  study: StudyStep[];
   formulas: Formula[];
-  questions: Question[]; // เรียงจาก 🟢 🟡 🔴
-  mini: MiniGame;
+  questions: Question[];
+  miniGame: MiniGameInfo;
+  bossName: string; // ชื่อบอสท้ายบท
+  bossIntro: string;
 }
 
-/** เลเวลที่เลือก (ม.4 / ม.5 / ม.6) */
-export type LevelId = "m4" | "m5" | "m6";
+/** ระดับชั้น */
+export interface LevelInfo {
+  id: "m4" | "m5" | "m6";
+  name: string;
+  color: string;
+  emoji: string;
+  desc: string;
+}

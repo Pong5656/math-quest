@@ -1,121 +1,219 @@
 "use client";
-
-// ===== หน้าสถิติ: เหรียญ คะแนน แบดจ์ สตรีค และความคืบหน้าแต่ละบท =====
-
+// ══════════════════════════════════════════════════════════
+// หน้าสถิติ (/stats) — เหรียญ คะแนน Badge Streak (localStorage) + กระดานคะแนนจากเซิร์ฟเวอร์
+// ══════════════════════════════════════════════════════════
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ALL_CHAPTERS, badgeInfo } from "@/data";
-import { getSave } from "@/lib/store";
+import { CHAPTERS, getChapter } from "@/data";
+import { chapterStat } from "@/lib/storage";
+import { fetchLeaderboard, useGameState } from "@/lib/useGameState";
+import { sfx } from "@/lib/sound";
 
 export default function StatsPage() {
-  const [save, setSave] = useState(getSave());
-  useEffect(() => setSave(getSave()), []);
+  const { state, ready, update, reset } = useGameState();
+  const [top, setTop] = useState<Array<Record<string, unknown>>>([]);
+  const [confirmReset, setConfirmReset] = useState(false);
 
-  const { coins, score, streak, badges, answered, correct } = save.stats;
-  const acc = answered > 0 ? Math.round((correct / answered) * 100) : 0;
-  const totalModes = ALL_CHAPTERS.length * 3; // ด่าน + มินิเกม + บอส
-  const doneModes = ALL_CHAPTERS.reduce((s, c) => {
-    const d = save.done[c.id];
-    return s + (d?.game ? 1 : 0) + (d?.mini ? 1 : 0) + (d?.boss ? 1 : 0);
-  }, 0);
+  useEffect(() => {
+    void fetchLeaderboard().then(setTop);
+  }, []);
 
-  const cards = [
-    { icon: "🪙", label: "เหรียญสะสม", value: coins, color: "bg-amber-300" },
-    { icon: "⭐", label: "คะแนนรวม", value: score, color: "bg-yellow-300" },
-    { icon: "🔥", label: "สตรีค (วันติดกัน)", value: streak, color: "bg-orange-300" },
-    { icon: "🎯", label: "ความแม่นยำ", value: `${acc}%`, color: "bg-green-300" },
+  const totals = CHAPTERS.reduce(
+    (acc, c) => {
+      const s = chapterStat(state, c.id);
+      acc.correct += s.correct;
+      acc.wrong += s.wrong;
+      acc.played += s.played;
+      acc.score += s.bestScore;
+      return acc;
+    },
+    { correct: 0, wrong: 0, played: 0, score: 0 },
+  );
+  const acc = totals.correct + totals.wrong > 0 ? Math.round((totals.correct / (totals.correct + totals.wrong)) * 100) : 0;
+
+  const CARDS = [
+    { icon: "🪙", label: "เหรียญที่เก็บได้ทั้งหมด", value: state.coins, color: "#fbd000" },
+    { icon: "⭐", label: "คะแนนสะสม", value: state.score, color: "#7CFC00" },
+    { icon: "🏅", label: "Badge ที่ปลดล็อก", value: state.badges.length, color: "#00e5ff" },
+    { icon: "🔥", label: "Streak ปัจจุบัน (วัน)", value: state.streak, color: "#ff8a65" },
+    { icon: "🚩", label: "ด่านที่พิชิตได้", value: state.cleared.length, color: "#c84c0c" },
+    { icon: "🎯", label: "ความแม่นรวม", value: `${acc}%`, color: "#ba68c8" },
   ];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <h1 className="text-center font-pixel text-sm leading-6 text-[#23273a] sm:text-lg">🏆 สถิติการผจญภัย</h1>
-      <p className="mt-2 text-center text-sm font-medium text-slate-700">
-        ตอบแล้ว {answered} ข้อ · ถูก {correct} ข้อ · ปลดล็อกโหมด {doneModes}/{totalModes}
-      </p>
+    <div className="space-y-4">
+      <header className="pixel-box bg-gradient-to-r from-indigo-700 to-[#1b1140] p-4">
+        <h1 className="font-pixel text-sm text-[#fbd000] sm:text-base">🏆 PLAYER STATS</h1>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            value={state.name}
+            onChange={(e) => update((s) => ({ ...s, name: e.target.value.slice(0, 24) }))}
+            className="border-4 border-[#0b0620] bg-white px-2 py-1 text-sm text-[#1a1030] outline-none"
+            placeholder="ชื่อผู้เล่น"
+          />
+          <span className="text-xs text-white/70">← ใส่ชื่อของคุณเพื่อขึ้นกระดานคะแนน (Streak สูงสุด: {state.bestStreak} วัน)</span>
+        </div>
+      </header>
 
       {/* การ์ดสถิติหลัก */}
-      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {cards.map((c, i) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {CARDS.map((c, i) => (
           <motion.div
             key={c.label}
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.08 }}
-            className={`pixel-card p-4 text-center ${c.color}`}
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.06, type: "spring", stiffness: 260, damping: 16 }}
+            className="pixel-box bg-[#120a26] p-3 text-center"
           >
             <p className="text-3xl">{c.icon}</p>
-            <p className="mt-2 font-pixel text-base text-[#23273a]">{c.value}</p>
-            <p className="mt-1 text-xs font-bold text-slate-700">{c.label}</p>
+            <p className="mt-1 font-pixel text-sm" style={{ color: c.color }}>
+              {ready ? c.value : "–"}
+            </p>
+            <p className="mt-1 text-[10px] leading-tight text-white/60">{c.label}</p>
           </motion.div>
         ))}
       </div>
 
-      {/* แบดจ์ */}
-      <section className="mt-10">
-        <h2 className="font-pixel text-xs leading-5 text-[#23273a]">🏅 แบดจ์ที่ปลดล็อกแล้ว ({badges.length})</h2>
-        {badges.length === 0 ? (
-          <div className="pixel-card mt-3 bg-white p-5 text-center text-sm font-semibold text-slate-600">
-            ยังไม่มีแบดจ์ — ผ่านด่านมาริโอ มินิเกม หรือบอสของบทใดก็ได้ เพื่อรับแบดจ์แรก!
-          </div>
+      {/* Badge ที่ปลดล็อก */}
+      <section className="pixel-box bg-[#120a26] p-4">
+        <h2 className="mb-3 font-pixel text-[11px] text-[#fbd000]">🏅 BADGE COLLECTION</h2>
+        {state.badges.length === 0 ? (
+          <p className="text-xs text-white/60">ยังไม่มี Badge — พิชิตด่านมาริโอหรือปราบบอสเพื่อรับเหรียญตราแรกของคุณ!</p>
         ) : (
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {badges.map((b, i) => {
-              const info = badgeInfo(b);
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {state.badges.map((b) => {
+              const ch = getChapter(b.chapterId);
               return (
-                <motion.div
-                  key={b}
-                  initial={{ opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: Math.min(i * 0.05, 0.5) }}
-                  className="pixel-card bg-[#fff8e7] p-3 text-center"
-                >
-                  <p className="text-3xl">{info.emoji}</p>
-                  <p className="mt-1.5 text-xs font-extrabold">{info.label}</p>
-                </motion.div>
+                <div key={b.id} className="pixel-box flex items-center gap-2 bg-[#1b1140] p-2">
+                  <motion.span animate={{ rotate: [0, 8, -8, 0] }} transition={{ repeat: Infinity, duration: 3 }} className="text-2xl">
+                    🏅
+                  </motion.span>
+                  <div>
+                    <p className="text-xs font-bold text-white">{b.name}</p>
+                    <p className="text-[10px] text-white/60">
+                      {ch?.title ?? b.chapterId} · {new Date(b.at).toLocaleDateString("th-TH")}
+                    </p>
+                  </div>
+                </div>
               );
             })}
           </div>
         )}
       </section>
 
-      {/* ความคืบหน้ารายบท */}
-      <section className="mt-10">
-        <h2 className="font-pixel text-xs leading-5 text-[#23273a]">🗺️ แผนที่การผจญภัยรายบท</h2>
-        <div className="pixel-card mt-3 overflow-x-auto bg-white">
-          <table className="w-full min-w-[560px] text-sm">
+      {/* สถิติรายบท */}
+      <section className="pixel-box bg-[#120a26] p-4">
+        <h2 className="mb-3 font-pixel text-[11px] text-[#fbd000]">📊 สถิติรายบท ({CHAPTERS.length} บท)</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-xs">
             <thead>
-              <tr className="border-b-4 border-[#23273a] bg-[#23273a] text-left text-white">
-                <th className="px-3 py-2 font-pixel text-[9px]">บทเรียน</th>
-                <th className="px-3 py-2 text-center text-xs">🏁 ด่าน</th>
-                <th className="px-3 py-2 text-center text-xs">🕹️ มินิเกม</th>
-                <th className="px-3 py-2 text-center text-xs">🐲 บอส</th>
-                <th className="px-3 py-2 text-center text-xs">🎯 คะแนนสูงสุด</th>
+              <tr className="border-b-4 border-[#0b0620] text-white/60">
+                <th className="p-2">บท</th>
+                <th className="p-2">เล่น</th>
+                <th className="p-2">ถูก/ผิด</th>
+                <th className="p-2">ความแม่น</th>
+                <th className="p-2">คะแนนสูงสุด</th>
+                <th className="p-2">บอส</th>
+                <th className="p-2">สถานะ</th>
               </tr>
             </thead>
             <tbody>
-              {ALL_CHAPTERS.map((ch) => {
-                const d = save.done[ch.id] ?? { game: false, mini: false, boss: false, quizBest: 0 };
-                const cell = (ok: boolean) => (
-                  <td className="border-b-2 border-slate-200 px-3 py-2 text-center">
-                    {ok ? <span className="font-extrabold text-green-600">✔</span> : <span className="text-slate-300">—</span>}
-                  </td>
-                );
+              {CHAPTERS.map((c) => {
+                const s = chapterStat(state, c.id);
+                const t = s.correct + s.wrong;
+                const a = t ? Math.round((s.correct / t) * 100) : 0;
                 return (
-                  <tr key={ch.id} className="hover:bg-yellow-50">
-                    <td className="border-b-2 border-slate-200 px-3 py-2 font-semibold">
-                      {ch.emoji} {ch.grade} ล.{ch.book} · {ch.short}
+                  <tr key={c.id} className="border-b-2 border-white/10 text-white/80">
+                    <td className="p-2">
+                      <Link href={`/chapter/${c.id}/mode`} className="hover:text-[#fbd000]">
+                        {c.emoji} {c.title}
+                      </Link>
                     </td>
-                    {cell(d.game)}
-                    {cell(d.mini)}
-                    {cell(d.boss)}
-                    <td className="border-b-2 border-slate-200 px-3 py-2 text-center font-bold">{d.quizBest > 0 ? d.quizBest : "—"}</td>
+                    <td className="p-2">{s.played}</td>
+                    <td className="p-2">
+                      <span className="text-green-400">{s.correct}</span>/<span className="text-red-400">{s.wrong}</span>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-1">
+                        <div className="h-2 w-16 border-2 border-[#0b0620] bg-black/40">
+                          <div className="h-full bg-[#fbd000]" style={{ width: `${a}%` }} />
+                        </div>
+                        {a}%
+                      </div>
+                    </td>
+                    <td className="p-2 text-[#7CFC00]">{s.bestScore}</td>
+                    <td className="p-2 text-[#ff8a65]">{s.bossBest}</td>
+                    <td className="p-2">{state.cleared.includes(c.id) ? "🚩 ผ่านด่าน" : "—"}</td>
                   </tr>
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr className="text-[#fbd000]">
+                <td className="p-2 font-bold">รวมทั้งหมด</td>
+                <td className="p-2">{totals.played}</td>
+                <td className="p-2">
+                  {totals.correct}/{totals.wrong}
+                </td>
+                <td className="p-2">{acc}%</td>
+                <td className="p-2">{totals.score}</td>
+                <td className="p-2">—</td>
+                <td className="p-2">{state.cleared.length}/{CHAPTERS.length}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </section>
-    </main>
+
+      {/* กระดานคะแนนจากเซิร์ฟเวอร์ */}
+      <section className="pixel-box bg-[#120a26] p-4">
+        <h2 className="mb-3 font-pixel text-[11px] text-[#fbd000]">🌐 GLOBAL LEADERBOARD (PostgreSQL)</h2>
+        {top.length === 0 ? (
+          <p className="text-xs text-white/60">ยังไม่มีคะแนนบนเซิร์ฟเวอร์ เล่นจบด่านแล้วคะแนนของคุณจะถูกส่งขึ้นมาที่นี่อัตโนมัติ</p>
+        ) : (
+          <ol className="space-y-1">
+            {top.map((r, i) => (
+              <li key={i} className="flex items-center gap-2 border-b-2 border-white/10 pb-1 text-xs">
+                <span className="font-pixel text-[10px] text-[#fbd000]">#{i + 1}</span>
+                <span className="text-white/90">{String(r.name)}</span>
+                <span className="text-white/50">
+                  {getChapter(String(r.chapterId))?.title ?? String(r.chapterId)} · {String(r.mode)}
+                </span>
+                <span className="ml-auto font-pixel text-[10px] text-[#7CFC00]">{String(r.score)}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      {/* รีเซ็ต */}
+      <section className="pixel-box bg-[#120a26] p-4 text-center">
+        {confirmReset ? (
+          <div>
+            <p className="mb-2 text-xs text-white/80">แน่ใจหรือว่าจะลบความคืบหน้าทั้งหมด (เหรียญ คะแนน Badge สมุดข้อผิด)?</p>
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => {
+                  reset();
+                  setConfirmReset(false);
+                  sfx.gameover();
+                }}
+                className="pixel-btn bg-red-700 px-4 py-2 text-xs text-white"
+              >
+                🗑️ ลบทั้งหมด
+              </button>
+              <button onClick={() => setConfirmReset(false)} className="pixel-btn bg-[#2a1a4a] px-4 py-2 text-xs text-white">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmReset(true)} className="pixel-btn bg-[#2a1a4a] px-4 py-2 text-xs text-white/80">
+            🗑️ รีเซ็ตความคืบหน้าทั้งหมด
+          </button>
+        )}
+      </section>
+    </div>
   );
 }

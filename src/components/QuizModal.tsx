@@ -1,288 +1,273 @@
 "use client";
-
-// ===== โมดัลถาม-ตอบหลัก ใช้ทั้งในเกมมาริโอ โหมดตะลุยโจทย์ และบอส =====
-
-import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+// ══════════════════════════════════════════════════════════
+// QuizModal — โมดัลคำถามที่ใช้ร่วมกันทั้งเกมมาริโอ / แบบทดสอบ / บอส / ทบทวน
+//  • เปิดแบบ pop-in + bounce
+//  • ตอบถูก: วาบเขียว + เหรียญเด้ง + "ถูกต้อง! 🎉"
+//  • ตอบผิด: shake + วาบแดง + เฉลยทีละขั้น + ทริก แล้วตอบใหม่ได้
+//  • แถบเวลา: ลดแบบ smooth และเปลี่ยนเป็นสีแดงเมื่อเหลือ < 10 วินาที
+// ══════════════════════════════════════════════════════════
+import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState } from "react";
 import type { Question } from "@/lib/types";
-import MathText from "./MathText";
-import { DiffPill } from "./ui";
-import { sfx } from "@/lib/sfx";
+import { DIFF_META } from "@/data";
+import MathText from "@/lib/math";
+import { sfx } from "@/lib/sound";
 
-type Phase = "answer" | "correct" | "explain";
-
-export default function QuizModal({
-  q,
-  onCorrect,
-  onWrong,
-  timerSec,
-  allowRetry = true,
-  retryLeft = Infinity,
-  hintCount = 0,
-  onUseHint,
-  coinReward = 10,
-}: {
-  q: Question;
-  onCorrect: () => void;
-  /** เรียกเมื่อตอบผิดหรือหมดเวลา (หักหัวใจภายนอก) */
-  onWrong: () => void;
-  /** ถ้ากำหนด จะจับเวลา (โหมดบอส) */
-  timerSec?: number;
-  /** ผิดแล้วตอบใหม่ได้ไหม (เกมมาริโอ = ได้) */
+export interface QuizModalProps {
+  question: Question | null;
+  open: boolean;
+  title?: string;
+  /** เวลาคิดเป็นวินาที (0 = ไม่จับเวลา) */
+  timeLimit?: number;
+  /** อนุญาตให้ใช้ไอเทม "ตัด 2 ช้อยส์" */
+  hintLeft?: number;
+  onUseHint?: (q: Question, eliminated: number[]) => void;
+  /** ตอบผิดแล้วให้ลองตอบใหม่ได้ (โหมดเกมมาริโอ) */
   allowRetry?: boolean;
-  retryLeft?: number;
-  hintCount?: number;
-  onUseHint?: () => boolean;
+  /** คะแนนเหรียญที่ได้เมื่อตอบถูก */
   coinReward?: number;
-}) {
-  const [phase, setPhase] = useState<Phase>("answer");
-  const [picked, setPicked] = useState<number | null>(null);
-  const [wrongFlash, setWrongFlash] = useState(false);
-  const [hidden, setHidden] = useState<number[]>([]);
-  const [timeLeft, setTimeLeft] = useState(timerSec ?? 0);
-  const [wrongCount, setWrongCount] = useState(0);
+  onAnswer: (correct: boolean, firstTry: boolean, attempts: number) => void;
+  onClose: () => void;
+}
 
-  // นับเวลาถอยหลัง (โหมดบอส)
+export default function QuizModal(p: QuizModalProps) {
+  const { question, open } = p;
+  const [selected, setSelected] = useState<number | null>(null);
+  const [phase, setPhase] = useState<"answer" | "correct" | "wrong" | "timeout">("answer");
+  const [attempts, setAttempts] = useState(0);
+  const [time, setTime] = useState(p.timeLimit ?? 0);
+  const [eliminated, setEliminated] = useState<number[]>([]);
+
+  const limit = p.timeLimit ?? 0;
+
+  // รีเซ็ตสถานะทุกครั้งที่โจทย์เปลี่ยน
   useEffect(() => {
-    if (!timerSec || phase !== "answer") return;
-    setTimeLeft(timerSec);
-    const iv = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 0.25) {
-          clearInterval(iv);
-          handleTimeout();
-          return 0;
-        }
-        return t - 0.25;
-      });
-    }, 250);
-    return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timerSec, phase, q.id]);
-
-  const letters = ["ก", "ข", "ค", "ง"];
-  const pct = timerSec ? Math.max(0, (timeLeft / timerSec) * 100) : 0;
-  const danger = timerSec ? timeLeft < 10 : false;
-
-  // ตัดตัวเลือกผิด 2 ข้อ (ไอเทมน้ำยาใบ้)
-  const hintOptions = useMemo(() => {
-    const wrongs = q.ch.map((_, i) => i).filter((i) => i !== q.a);
-    return wrongs.sort(() => Math.random() - 0.5).slice(0, 2);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q.id]);
-
-  function handleTimeout() {
-    sfx.hit();
-    setWrongFlash(true);
-    setTimeout(() => setWrongFlash(false), 600);
-    setPicked(-1);
-    setPhase("explain");
-    setWrongCount((c) => c + 1);
-    onWrong();
-  }
-
-  function pick(i: number) {
-    if (phase !== "answer" || hidden.includes(i)) return;
-    setPicked(i);
-    if (i === q.a) {
-      sfx.correct();
-      setPhase("correct");
-    } else {
-      sfx.wrong();
-      setWrongFlash(true);
-      setTimeout(() => setWrongFlash(false), 600);
-      setWrongCount((c) => c + 1);
-      setPhase("explain");
-      onWrong();
-    }
-  }
-
-  function useHint() {
-    if (hintCount <= 0 || !onUseHint) return;
-    if (onUseHint()) {
-      sfx.powerup();
-      setHidden(hintOptions);
-    }
-  }
-
-  function retry() {
-    sfx.click();
-    setPicked(null);
+    if (!open || !question) return;
+    setSelected(null);
     setPhase("answer");
-  }
+    setAttempts(0);
+    setTime(limit);
+    setEliminated([]);
+  }, [open, question?.id, limit]);
+
+  // ตัวจับเวลา (ลดทีละ 0.1 วินาทีเพื่อให้แถบเวลาไหลลื่น)
+  useEffect(() => {
+    if (!open || limit <= 0 || phase !== "answer") return;
+    const t = setInterval(() => {
+      setTime((v) => {
+        const nv = Math.max(0, +(v - 0.1).toFixed(1));
+        if (nv === 0) setPhase("timeout");
+        return nv;
+      });
+    }, 100);
+    return () => clearInterval(t);
+  }, [open, limit, phase]);
+
+  // เสียงติ๊ก ๆ เมื่อเวลาใกล้หมด
+  useEffect(() => {
+    if (limit > 0 && phase === "answer" && time > 0 && time < 10 && Math.abs(time % 1) < 0.05) sfx.tick();
+  }, [time, phase, limit]);
+
+  if (!question) return null;
+  const meta = DIFF_META[question.diff];
+
+  const choose = (i: number) => {
+    if (phase !== "answer" || eliminated.includes(i)) return;
+    setSelected(i);
+    const ok = i === question.answer;
+    setAttempts((a) => a + 1);
+    if (ok) {
+      setPhase("correct");
+      sfx.correct();
+      sfx.coin();
+    } else {
+      setPhase("wrong");
+      sfx.wrong();
+    }
+  };
+
+  const useHint = () => {
+    if (!p.hintLeft || p.hintLeft <= 0 || phase !== "answer" || eliminated.length) return;
+    // สุ่มตัดช้อยส์ผิดออก 2 ตัว
+    const wrongs = [0, 1, 2, 3].filter((i) => i !== question.answer);
+    const cut = wrongs.sort(() => Math.random() - 0.5).slice(0, 2);
+    setEliminated(cut);
+    sfx.power();
+    p.onUseHint?.(question, cut);
+  };
+
+  const retry = () => {
+    setSelected(null);
+    setPhase("answer");
+    setTime(limit > 0 ? limit : 0);
+  };
+
+  const finish = (ok: boolean) => p.onAnswer(ok, attempts === 1 && ok, attempts);
 
   return (
     <AnimatePresence>
-      <motion.div
-        key="overlay"
-        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-3"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-      >
+      {open && (
         <motion.div
-          key={q.id + wrongCount /* รีเซ็ตอนิเมชันเมื่อเริ่มใหม่ */}
-          initial={{ scale: 0.5, y: 40, opacity: 0 }}
-          animate={{ scale: 1, y: 0, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 300, damping: 16 }}
-          className={`relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-sm border-4 border-[#23273a] bg-[#fff8e7] p-4 shadow-[8px_8px_0_rgba(0,0,0,0.45)] sm:p-6 ${
-            wrongFlash ? "shake" : ""
-          }`}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-2 sm:p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
         >
-          {wrongFlash ? <div className="pointer-events-none absolute inset-0 bg-red-400/40" /> : null}
-          {phase === "correct" ? <div className="flash-green pointer-events-none absolute inset-0" /> : null}
+          <motion.div
+            initial={{ scale: 0.55, y: 60, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.8, y: 30, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 18, mass: 0.7 }}
+            className={`pixel-box relative max-h-[92vh] w-full max-w-2xl overflow-y-auto bg-[#1b1140] p-4 sm:p-6 ${
+              phase === "wrong" || phase === "timeout" ? "shake" : ""
+            }`}
+            style={{ borderColor: phase === "correct" ? "#00a800" : phase === "wrong" || phase === "timeout" ? "#c0392b" : "#0b0620" }}
+          >
+            {/* แสงวาบตามผลคำตอบ */}
+            {phase === "correct" && <div className="pointer-events-none absolute inset-0 animate-pulse bg-green-400/25" />}
+            {(phase === "wrong" || phase === "timeout") && <div className="pointer-events-none absolute inset-0 bg-red-500/20" />}
 
-          {/* หัวเรื่อง */}
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="font-pixel text-[10px] text-amber-700">❓ QUIZ BLOCK</span>
-            <DiffPill lv={q.lv} />
-            <span className="ml-auto rounded-sm border-2 border-amber-700 bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-900">
-              🪙 +{coinReward}
-            </span>
-          </div>
+            {/* หัวข้อโมดัล */}
+            <div className="relative mb-3 flex flex-wrap items-center gap-2">
+              <span className={`pixel-btn px-2 py-1 text-[11px] text-white ${meta.bg}`}>
+                {meta.dot} {meta.label}
+              </span>
+              <span className="font-pixel text-[10px] text-[#fbd000]">{p.title ?? "QUIZ"}</span>
+              <span className="ml-auto font-pixel text-[10px] text-white/70">ครั้งที่ {attempts + (phase === "answer" ? 1 : 0)}</span>
+              {limit > 0 && phase === "answer" && (
+                <span className={`font-pixel text-[11px] ${time < 10 ? "blink text-red-400" : "text-white"}`}>⏱ {time.toFixed(1)}</span>
+              )}
+            </div>
 
-          {/* แถบเวลาโหมดบอส */}
-          {timerSec ? (
-            <div className="mb-3">
-              <div className="mb-1 flex justify-between text-xs font-bold">
-                <span className={danger ? "text-red-600 blink-slow" : "text-slate-600"}>⏱ เวลาที่เหลือ</span>
-                <span className={`font-pixel text-[10px] ${danger ? "text-red-600" : "text-slate-700"}`}>
-                  {Math.ceil(timeLeft)} วิ
-                </span>
-              </div>
-              <div className="h-3 w-full rounded-sm border-2 border-[#23273a] bg-slate-200">
-                <div
-                  className={`timebar h-full ${danger ? "bg-red-500" : "bg-green-500"}`}
-                  style={{ width: `${pct}%` }}
+            {/* แถบเวลา */}
+            {limit > 0 && (
+              <div className="relative mb-3 h-3 w-full border-2 border-[#0b0620] bg-[#2a1a4a]">
+                <motion.div
+                  className={`h-full ${time < 10 ? "bg-red-500" : "bg-[#fbd000]"}`}
+                  animate={{ width: `${(time / limit) * 100}%` }}
+                  transition={{ ease: "linear", duration: 0.12 }}
                 />
               </div>
+            )}
+
+            {/* เนื้อโจทย์ */}
+            <div className="relative mb-4 border-4 border-[#0b0620] bg-white/95 p-3 text-[15px] leading-relaxed text-[#1a1030] sm:p-4">
+              <MathText>{question.q}</MathText>
             </div>
-          ) : null}
 
-          {/* โจทย์ */}
-          <div className="mb-4 rounded-sm border-4 border-slate-300 bg-white p-3 text-base font-medium sm:text-lg">
-            <MathText text={q.q} />
-          </div>
-
-          {/* ตัวเลือก */}
-          {phase === "answer" ? (
-            <div className="space-y-2">
-              {q.ch.map((c, i) => {
-                const off = hidden.includes(i);
+            {/* ตัวเลือก */}
+            <div className="relative grid gap-2 sm:grid-cols-2">
+              {question.options.map((opt, i) => {
+                const isAns = i === question.answer;
+                const chosen = selected === i;
+                const dead = eliminated.includes(i);
+                let cls = "bg-[#2a1a4a] text-white hover:bg-[#3d2a6b]";
+                if (phase !== "answer" && isAns) cls = "bg-green-600 text-white";
+                else if (chosen && !isAns) cls = "bg-red-600 text-white";
+                if (dead) cls = "bg-[#241a3a] text-white/25 line-through";
                 return (
-                  <button
+                  <motion.button
                     key={i}
-                    type="button"
-                    disabled={off}
-                    onClick={() => pick(i)}
-                    className={`w-full rounded-sm border-4 px-3 py-2.5 text-left text-sm font-semibold transition sm:text-base ${
-                      off
-                        ? "border-slate-200 bg-slate-100 text-slate-300 line-through"
-                        : "border-[#23273a] bg-sky-100 hover:-translate-y-0.5 hover:bg-yellow-200"
-                    }`}
+                    whileTap={{ scale: 0.97 }}
+                    disabled={phase !== "answer" || dead}
+                    onClick={() => choose(i)}
+                    className={`pixel-btn flex items-start gap-2 px-3 py-3 text-left text-sm ${cls}`}
                   >
-                    <span className="mr-2 font-pixel text-[10px] text-amber-700">{letters[i]}</span>
-                    <MathText text={c} />
-                  </button>
+                    <span className="font-pixel text-[11px] text-[#fbd000]">{["A", "B", "C", "D"][i]}</span>
+                    <span className="flex-1">
+                      <MathText>{opt}</MathText>
+                    </span>
+                    {phase === "correct" && chosen && (
+                      <motion.span initial={{ scale: 0 }} animate={{ scale: [0, 1.5, 1] }} className="text-lg">
+                        ✅
+                      </motion.span>
+                    )}
+                  </motion.button>
                 );
               })}
-              {hintCount > 0 && onUseHint && hidden.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={useHint}
-                  className="pixel-btn mt-1 w-full rounded-sm bg-emerald-300 px-3 py-2 text-sm font-bold text-emerald-950"
-                >
-                  🧪 ใช้ยาใบ้ (ตัดตัวเลือกผิด 2 ข้อ) — เหลือ {hintCount} ขวด
-                </button>
-              ) : null}
             </div>
-          ) : null}
 
-          {/* ถูกต้อง */}
-          {phase === "correct" ? (
-            <motion.div
-              initial={{ scale: 0.6, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="rounded-sm border-4 border-green-700 bg-green-100 p-4 text-center"
-            >
-              <p className="font-pixel text-sm text-green-700">ถูกต้อง! 🎉</p>
-              <motion.p
-                className="mt-2 text-3xl"
-                animate={{ y: [0, -10, 0], scale: [1, 1.3, 1] }}
-                transition={{ repeat: Infinity, duration: 0.9 }}
-              >
-                🪙
-              </motion.p>
-              <p className="mt-1 text-sm font-bold text-green-800">
-                +{coinReward} เหรียญ · +{coinReward * 5} คะแนน
-              </p>
-              <button
-                type="button"
-                onClick={onCorrect}
-                className="pixel-btn mt-3 rounded-sm bg-green-500 px-6 py-2 font-pixel text-[11px] text-white"
-              >
-                ไปต่อ ➜
+            {/* ปุ่มไอเทมช่วย */}
+            {phase === "answer" && (p.hintLeft ?? 0) > 0 && eliminated.length === 0 && (
+              <button onClick={useHint} className="pixel-btn mt-3 w-full bg-[#00a800] px-3 py-2 text-sm text-white">
+                ✂️ ใช้ไอเทมตัด 2 ช้อยส์ (เหลือ {p.hintLeft} ชิ้น)
               </button>
-            </motion.div>
-          ) : null}
+            )}
 
-          {/* เฉลยทีละขั้นหลังตอบผิด */}
-          {phase === "explain" ? (
-            <div className="space-y-3">
-              <div className="rounded-sm border-4 border-red-600 bg-red-100 p-3 text-center">
-                <p className="font-pixel text-xs text-red-700">ยังไม่ถูก! 💔 เสียหัวใจ 1 ดวง</p>
-                <p className="mt-1 text-sm text-red-800">
-                  เฉลยข้อ <span className="font-bold">{letters[q.a]}</span> — ดูวิธีทำทีละขั้นแล้วลองใหม่นะ!
-                </p>
-              </div>
-
-              <div className="rounded-sm border-4 border-sky-700 bg-sky-50 p-3">
-                <p className="mb-2 font-pixel text-[10px] text-sky-800">🧭 วิธีทำทีละขั้น</p>
-                <ol className="space-y-1.5">
-                  {q.steps.map((s, i) => {
-                    const cols = ["text-sky-900", "text-emerald-800", "text-amber-800", "text-fuchsia-800", "text-rose-800"];
-                    return (
-                      <li key={i} className={`flex gap-2 text-sm font-medium ${cols[i % cols.length]}`}>
-                        <span className="shrink-0 font-pixel text-[9px] leading-5">ขั้น {i + 1}</span>
-                        <MathText text={s} />
-                      </li>
-                    );
-                  })}
-                </ol>
-              </div>
-
-              <div className="rounded-sm border-4 border-green-700 bg-green-100 p-3 text-sm">
-                <span className="font-bold text-green-800">💡 ทริกคิดลัด: </span>
-                <MathText text={q.trick} />
-              </div>
-              <div className="rounded-sm border-4 border-amber-700 bg-amber-100 p-3 text-sm">
-                <span className="font-bold text-amber-800">📐 สูตรที่ใช้: </span>
-                <MathText text={q.formula} />
-              </div>
-
-              <div className="flex flex-wrap justify-center gap-2">
-                {allowRetry && retryLeft > 0 ? (
-                  <button
-                    type="button"
-                    onClick={retry}
-                    className="pixel-btn rounded-sm bg-yellow-400 px-6 py-2.5 font-pixel text-[11px] text-[#23273a]"
-                  >
-                    🔄 ลองตอบอีกครั้ง
+            {/* ผลลัพธ์ + เฉลยทีละขั้น */}
+            <AnimatePresence>
+              {phase === "correct" && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="relative mt-4 border-4 border-[#0b0620] bg-green-500 p-3 text-white"
+                >
+                  <p className="font-pixel text-xs">ถูกต้อง! 🎉 +{p.coinReward ?? 10} เหรียญ</p>
+                  <motion.div animate={{ y: [0, -10, 0] }} transition={{ repeat: Infinity, duration: 0.7 }} className="mt-2 text-3xl">
+                    🪙
+                  </motion.div>
+                  <button onClick={() => finish(true)} className="pixel-btn mt-2 w-full bg-[#fbd000] px-3 py-2 text-sm text-[#0b0620]">
+                    ▶ ไปต่อ
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={onCorrect}
-                    className="pixel-btn rounded-sm bg-sky-400 px-6 py-2.5 font-pixel text-[11px] text-[#23273a]"
-                  >
-                    เข้าใจแล้ว ไปต่อ ➜
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : null}
+                </motion.div>
+              )}
+
+              {(phase === "wrong" || phase === "timeout") && (
+                <motion.div
+                  initial={{ opacity: 0, y: 24 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="relative mt-4 space-y-3"
+                >
+                  <div className="border-4 border-[#0b0620] bg-red-600 p-3 text-white">
+                    <p className="font-pixel text-xs">{phase === "timeout" ? "หมดเวลา! ⏰" : "ผิดแล้ว 💔 ดูทริก 💡"}</p>
+                    <p className="mt-1 text-sm">
+                      คำตอบที่ถูกคือ <b>{["A", "B", "C", "D"][question.answer]}</b> : <MathText>{question.options[question.answer]}</MathText>
+                    </p>
+                  </div>
+
+                  {/* วิธีทำทีละขั้น (fade-in ทีละบรรทัด) */}
+                  <div className="border-4 border-[#0b0620] bg-[#120a26] p-3">
+                    <p className="mb-2 font-pixel text-[10px] text-[#fbd000]">✍️ วิธีทำทีละขั้น</p>
+                    {question.steps.map((s, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: -18 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.25 + i * 0.45 }}
+                        className="mb-2 flex gap-2 border-l-4 pl-2 text-sm"
+                        style={{ borderColor: ["#fbd000", "#00e5ff", "#7CFC00", "#ff8a65", "#ba68c8", "#4dd0e1"][i % 6] }}
+                      >
+                        <span className="font-pixel text-[10px] text-white/60">{i + 1}</span>
+                        <span className="text-white/90">
+                          <MathText>{s}</MathText>
+                        </span>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="border-4 border-[#0b0620] bg-green-700 p-3 text-sm text-white">
+                    💡 <b>ทริกคิดลัด:</b> <MathText>{question.trick}</MathText>
+                  </motion.div>
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.55 }} className="border-4 border-[#0b0620] bg-yellow-400 p-3 text-sm text-[#0b0620]">
+                    📏 <b>สูตรที่ใช้:</b> <MathText>{question.formula}</MathText>
+                  </motion.div>
+
+                  <div className="flex gap-2">
+                    {p.allowRetry && (
+                      <button onClick={retry} className="pixel-btn flex-1 bg-[#fbd000] px-3 py-2 text-sm text-[#0b0620]">
+                        🔁 ลองตอบใหม่ (หัวใจหายไปแล้ว 1 ดวง)
+                      </button>
+                    )}
+                    <button onClick={() => finish(false)} className="pixel-btn flex-1 bg-[#2a1a4a] px-3 py-2 text-sm text-white">
+                      {p.allowRetry ? "➡️ ข้ามข้อนี้" : "▶ ไปต่อ"}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </motion.div>
-      </motion.div>
+      )}
     </AnimatePresence>
   );
 }

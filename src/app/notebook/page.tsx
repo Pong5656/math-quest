@@ -1,122 +1,144 @@
 "use client";
-
-// ===== สมุดจดข้อผิด: รวมข้อที่เคยตอบผิด พร้อมทบทวนแบบเว้นระยะ (spaced repetition อย่างง่าย) =====
-
-import { useMemo, useRef, useState } from "react";
-import type { Question } from "@/lib/types";
-import { ALL_CHAPTERS, getChapter } from "@/data";
-import { getSave, recordAnswer } from "@/lib/store";
-import MathText from "@/components/MathText";
+// ══════════════════════════════════════════════════════════
+// สมุดจดข้อผิด (/notebook) — ข้อที่เคยตอบผิดจากทุกโหมด + ทบทวนซ้ำแบบ spaced repetition
+// ══════════════════════════════════════════════════════════
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { DIFF_META, findQuestion } from "@/data";
+import MathText from "@/lib/math";
 import QuizModal from "@/components/QuizModal";
-import { DiffPill } from "@/components/ui";
-import { sfx } from "@/lib/sfx";
+import { markReviewed, type NotebookItem } from "@/lib/storage";
+import { useGameState } from "@/lib/useGameState";
+import { sfx } from "@/lib/sound";
+import type { Question } from "@/lib/types";
 
-interface Item {
-  chId: string;
-  q: Question;
-  count: number;
-  due: number;
-}
+const BOX_LABEL = ["ทบทวนวันนี้", "ทบทวนใน 1 วัน", "ทบทวนใน 3 วัน", "ทบทวนใน 7 วัน", "ทบทวนใน 14 วัน"];
 
 export default function NotebookPage() {
-  const [version, setVersion] = useState(0);
-  const [reviewing, setReviewing] = useState<Item | null>(null);
-  const wrongFirst = useRef(false);
+  const { state, ready, update } = useGameState();
+  const [onlyDue, setOnlyDue] = useState(false);
+  const [openQ, setOpenQ] = useState<Question | null>(null);
+  const [filter, setFilter] = useState<string>("all");
 
   const items = useMemo(() => {
-    void version;
-    const save = getSave();
-    const list: Item[] = [];
-    for (const w of Object.values(save.wrong)) {
-      const ch = getChapter(w.chId);
-      const q = ch?.questions.find((x) => x.id === w.qid);
-      if (ch && q) list.push({ chId: w.chId, q, count: w.count, due: w.due });
-    }
-    // เรียงตามจำนวนครั้งที่ผิดมากสุดก่อน (ข้อที่ผิดซ้ำ = ควรทบทวนก่อน)
-    return list.sort((a, b) => b.count - a.count);
-  }, [version]);
+    const now = Date.now();
+    return state.notebook
+      .filter((it) => (onlyDue ? it.next <= now : true))
+      .filter((it) => (filter === "all" ? true : it.chapterId.startsWith(filter)))
+      .sort((a, b) => a.next - b.next);
+  }, [state.notebook, onlyDue, filter]);
 
-  const now = Date.now();
-  const dueItems = items.filter((i) => i.due <= now);
+  const dueCount = state.notebook.filter((i) => i.next <= Date.now()).length;
 
-  const closeReview = () => {
-    setReviewing(null);
-    wrongFirst.current = false;
-    setVersion((v) => v + 1);
+  const onAnswer = (ok: boolean) => {
+    if (!openQ) return;
+    const qid = openQ.id;
+    update((s) => markReviewed(s, qid, ok));
+    ok ? sfx.correct() : sfx.wrong();
+    setOpenQ(null);
   };
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <h1 className="text-center font-pixel text-sm leading-6 text-[#23273a] sm:text-lg">📓 สมุดจดข้อผิด</h1>
-      <p className="mt-2 text-center text-sm font-medium text-slate-700">
-        ทุกข้อที่เคยตอบผิดจากเกม โหมดตะลุยโจทย์ และบอส จะถูกเก็บที่นี่ — ตอบถูกในการทบทวน = ลบออกจากสมุดอัตโนมัติ
-      </p>
-
-      {items.length > 0 ? (
-        <div className="pixel-card mt-6 flex flex-wrap items-center gap-2 bg-[#fff8e7] p-3 text-sm font-bold">
-          <span>📌 ทั้งหมด {items.length} ข้อ</span>
-          <span className="text-red-700">⏰ ถึงกำหนดทบทวนแล้ว {dueItems.length} ข้อ</span>
-          <span className="ml-auto text-xs text-slate-600">ผิดซ้ำบ่อยจะอยู่ด้านบนสุด</span>
+    <div className="space-y-4">
+      <header className="pixel-box bg-gradient-to-r from-sky-700 to-[#1b1140] p-4">
+        <h1 className="font-pixel text-sm text-[#fbd000] sm:text-base">📓 NOTEBOOK — สมุดจดข้อผิด</h1>
+        <p className="mt-1 text-sm text-white/85">
+          ข้อที่คุณเคยตอบผิดจากระหว่างเล่นด่าน / มินิเกม / แบบทดสอบ / บอส จะถูกเก็บไว้อัตโนมัติที่นี่ ทบทวนซ้ำจนกว่าจะแม่น
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          <span className="pixel-box bg-black/30 px-2 py-1">ทั้งหมด {state.notebook.length} ข้อ</span>
+          <span className="pixel-box bg-black/30 px-2 py-1 text-[#fbd000]">ถึงกำหนดทบทวน {ready ? dueCount : 0} ข้อ</span>
         </div>
-      ) : null}
+      </header>
+
+      <div className="pixel-box flex flex-wrap items-center gap-2 bg-[#120a26] p-3">
+        <button onClick={() => setOnlyDue((v) => !v)} className={`pixel-btn px-3 py-2 text-xs ${onlyDue ? "bg-[#fbd000] text-[#0b0620]" : "bg-[#2a1a4a] text-white"}`}>
+          ⏰ เฉพาะที่ถึงกำหนดทบทวน
+        </button>
+        <span className="text-xs text-white/60">กรองตามชั้น:</span>
+        {["all", "m4", "m5", "m6"].map((f) => (
+          <button key={f} onClick={() => setFilter(f)} className={`pixel-btn px-3 py-1.5 text-xs ${filter === f ? "bg-[#00a800] text-white" : "bg-[#2a1a4a] text-white"}`}>
+            {f === "all" ? "ทั้งหมด" : `ม.${f.replace("m", "")}`}
+          </button>
+        ))}
+      </div>
 
       {items.length === 0 ? (
-        <div className="pixel-card mx-auto mt-10 max-w-md bg-white p-8 text-center">
-          <p className="text-5xl">🎉</p>
-          <p className="mt-3 text-lg font-extrabold">สมุดว่างเปล่า!</p>
-          <p className="mt-1 text-sm text-slate-600">ยังไม่มีข้อผิดพลาด — ไปลุยด่านเก็บเหรียญต่อกันเลย</p>
+        <div className="pixel-box bg-[#120a26] p-10 text-center">
+          <p className="text-5xl">{state.notebook.length === 0 ? "🎉" : "✅"}</p>
+          <p className="mt-3 text-sm text-white/85">
+            {state.notebook.length === 0 ? "ยังไม่เคยตอบผิดเลย! ไปลุยด่านเก็บเหรียญกันเลย 🍄" : "ไม่มีข้อที่ถึงกำหนดทบทวนตอนนี้ — เยี่ยมมาก!"}
+          </p>
+          <Link href="/select" className="pixel-btn mt-4 inline-block bg-[#fbd000] px-4 py-2 text-sm text-[#0b0620]">
+            ▶ เริ่มผจญภัย
+          </Link>
         </div>
       ) : (
-        <div className="mt-4 space-y-4">
-          {items.map((it) => {
-            const ch = getChapter(it.chId)!;
-            const overdue = it.due <= now;
+        <div className="grid gap-3 md:grid-cols-2">
+          {items.map((it: NotebookItem, i: number) => {
+            const found = findQuestion(it.qid);
+            if (!found) return null;
+            const { chapter, question } = found;
+            const due = it.next <= Date.now();
             return (
-              <div key={it.q.id} className={`pixel-card bg-white p-4 ${overdue ? "ring-4 ring-red-300" : ""}`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xl">{ch.emoji}</span>
-                  <span className="text-xs font-bold text-slate-500">{ch.grade} ล.{ch.book} · {ch.short}</span>
-                  <DiffPill lv={it.q.lv} />
-                  <span className="rounded-sm border-2 border-red-600 bg-red-100 px-2 py-0.5 text-xs font-extrabold text-red-700">ผิด {it.count} ครั้ง</span>
-                  {overdue ? <span className="rounded-sm border-2 border-red-600 bg-red-500 px-2 py-0.5 text-xs font-extrabold text-white blink-slow">ถึงกำหนดทบทวน!</span> : null}
+              <motion.article
+                key={it.qid}
+                initial={{ opacity: 0, y: 22 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: Math.min(i * 0.04, 0.3) }}
+                className="pixel-box bg-[#1b1140] p-3"
+              >
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span className={`pixel-btn px-2 py-0.5 text-white ${DIFF_META[question.diff].bg}`}>
+                    {DIFF_META[question.diff].dot} {DIFF_META[question.diff].label}
+                  </span>
+                  <span className="border-2 border-white/20 px-1.5 py-0.5 text-white/70">
+                    {chapter.emoji} {chapter.title}
+                  </span>
+                  <span className="border-2 border-red-500/50 px-1.5 py-0.5 text-red-300">ผิด {it.wrong} ครั้ง</span>
+                  {it.right > 0 && <span className="border-2 border-green-500/50 px-1.5 py-0.5 text-green-300">ทบทวนถูก {it.right}</span>}
+                  <span className={`ml-auto px-1.5 py-0.5 ${due ? "blink bg-[#fbd000] text-[#0b0620]" : "text-white/50"}`}>
+                    {due ? "⏰ ถึงกำหนดแล้ว" : BOX_LABEL[Math.min(it.box, 4)]}
+                  </span>
                 </div>
-                <p className="mt-2 text-sm font-semibold sm:text-base"><MathText text={it.q.q} /></p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    sfx.click();
-                    setReviewing(it);
-                  }}
-                  className="pixel-btn mt-3 rounded-sm bg-yellow-400 px-4 py-2 text-xs font-extrabold text-[#23273a]"
-                >
-                  ✍️ ทบทวนข้อนี้
-                </button>
-              </div>
+
+                <p className="mb-2 border-4 border-[#0b0620] bg-white px-2 py-1.5 text-sm text-[#1a1030]">
+                  <MathText>{question.q}</MathText>
+                </p>
+
+                <details className="mb-2 text-xs text-white/75">
+                  <summary className="cursor-pointer font-bold text-[#fbd000]">👀 ดูเฉลยทีละขั้น + ทริก</summary>
+                  <div className="mt-2 space-y-1 border-l-4 border-white/20 pl-2">
+                    <p className="text-green-300">
+                      คำตอบ: <MathText>{question.options[question.answer]}</MathText>
+                    </p>
+                    {question.steps.map((s, k) => (
+                      <p key={k}>
+                        <b className="text-[#fbd000]">ขั้น {k + 1}:</b> <MathText>{s}</MathText>
+                      </p>
+                    ))}
+                    <p className="text-emerald-300">💡 ทริก: <MathText>{question.trick}</MathText></p>
+                    <p className="text-yellow-200">📏 สูตร: <MathText>{question.formula}</MathText></p>
+                  </div>
+                </details>
+
+                <div className="flex gap-2">
+                  <button onClick={() => setOpenQ(question)} className="pixel-btn flex-1 bg-[#00a800] px-3 py-2 text-xs text-white">
+                    🔁 ทบทวนโดยทำโจทย์อีกครั้ง
+                  </button>
+                  <Link href={`/chapter/${chapter.id}/study`} className="pixel-btn bg-[#2a1a4a] px-3 py-2 text-xs text-white">
+                    📖 อ่านบทนี้
+                  </Link>
+                </div>
+              </motion.article>
             );
           })}
         </div>
       )}
 
-      {/* โมดัลทบทวน */}
-      {reviewing ? (
-        <QuizModal
-          q={reviewing.q}
-          coinReward={0}
-          allowRetry={false}
-          onWrong={() => {
-            wrongFirst.current = true;
-            recordAnswer(reviewing.chId, reviewing.q.id, false);
-          }}
-          onCorrect={() => {
-            if (!wrongFirst.current) {
-              // ตอบถูก → ลบออกจากสมุด
-              recordAnswer(reviewing.chId, reviewing.q.id, true);
-              sfx.correct();
-            }
-            closeReview();
-          }}
-        />
-      ) : null}
-    </main>
+      <QuizModal question={openQ} open={!!openQ} title="ทบทวนจากสมุดจดข้อผิด" allowRetry={false} coinReward={5} onAnswer={onAnswer} onClose={() => setOpenQ(null)} />
+    </div>
   );
 }

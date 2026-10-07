@@ -1,161 +1,165 @@
 "use client";
-
-// ===== หน้าเรียน "จับมือสอน" — การ์ดสเต็ปทีละใบ พร้อมอนิเมชันและแถบความคืบหน้า =====
-
+// ══════════════════════════════════════════════════════════
+// หน้าเรียน (/chapter/[id]/study) — สอนแบบจับมือทีละสเต็ป 6 สเต็ป
+// สเต็ป 0 ตัวอย่างใกล้ตัว → 1 คอนเซปต์ → 2 กฎ/สูตร → 3 จับมือทำโจทย์ → 4 ทริก → 5 จุดพลาด
+// ══════════════════════════════════════════════════════════
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { useState } from "react";
 import { getChapter } from "@/data";
-import MathText from "@/components/MathText";
-import { bumpStreak } from "@/lib/store";
-import { sfx } from "@/lib/sfx";
+import StudyCard from "@/components/StudyCard";
+import MathText from "@/lib/math";
+import { sfx } from "@/lib/sound";
 
-export default function StudyPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const ch = getChapter(id);
-  const [step, setStep] = useState(0);
-  useEffect(() => {
-    bumpStreak();
-    window.scrollTo({ top: 0 });
-  }, []);
+export default function StudyPage() {
+  const params = useParams<{ id: string }>();
+  const chapter = getChapter(params.id ?? "");
+  const [i, setI] = useState(0);
+  const [dir, setDir] = useState(1);
 
-  if (!ch) {
+  if (!chapter) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <p className="font-pixel text-sm">ไม่พบบทเรียนนี้ 😢</p>
-        <Link href="/select" className="pixel-btn mt-6 inline-block rounded-sm bg-yellow-400 px-6 py-3 font-pixel text-xs text-[#23273a]">← กลับหน้าเลือกชั้น</Link>
-      </main>
+      <div className="pixel-box bg-[#1b1140] p-6 text-center">
+        <p className="font-pixel text-sm text-red-400">404 — ไม่พบบทเรียนนี้</p>
+        <Link href="/select" className="pixel-btn mt-4 inline-block bg-[#fbd000] px-4 py-2 text-sm text-[#0b0620]">◀ กลับ</Link>
+      </div>
     );
   }
 
-  const card = ch.study[step];
-  const total = ch.study.length;
-  const pct = ((step + 1) / total) * 100;
-
-  const go = (d: number) => {
-    sfx.click();
-    setStep((s) => Math.max(0, Math.min(total - 1, s + d)));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const steps = chapter.study;
+  const cur = steps[Math.min(i, steps.length - 1)];
+  const go = (n: number) => {
+    setDir(n > i ? 1 : -1);
+    setI(Math.max(0, Math.min(steps.length - 1, n)));
+    sfx.bump();
   };
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      {/* หัวบทเรียน */}
-      <div className="pixel-card bg-[#23273a] p-4 text-white sm:p-5">
-        <div className="flex items-center gap-3">
-          <span className="text-4xl">{ch.emoji}</span>
+    <div className="space-y-4">
+      {/* หัวบทเรียน + จุดประสงค์ตาม สสวท. */}
+      <header className="pixel-box p-4" style={{ background: `linear-gradient(135deg, ${chapter.color}44, #1b1140)` }}>
+        <div className="flex flex-wrap items-center gap-3">
+          <motion.span animate={{ rotate: [0, 10, -10, 0] }} transition={{ repeat: Infinity, duration: 3 }} className="text-5xl">
+            {chapter.emoji}
+          </motion.span>
           <div>
-            <p className="text-xs text-slate-300">
-              {ch.grade} เล่ม {ch.book} บทที่ {ch.num} · สอนแบบจับมือทีละสเต็ป
+            <p className="font-pixel text-[10px] text-white/60">
+              ม.{chapter.level.replace("m", "")} เล่ม {chapter.book} · บทที่ {chapter.no}
             </p>
-            <h1 className="text-xl font-extrabold sm:text-2xl">{ch.title}</h1>
+            <h1 className="text-xl font-extrabold sm:text-2xl" style={{ color: chapter.color }}>
+              {chapter.title}
+            </h1>
+            <p className="text-xs text-white/70">{chapter.subtitle}</p>
+          </div>
+          <div className="ml-auto flex gap-2">
+            <Link href={`/select/${chapter.level}`} className="pixel-btn bg-[#0b0620] px-3 py-2 text-xs text-white">◀ บทอื่น</Link>
+            <Link href={`/chapter/${chapter.id}/mode`} className="pixel-btn bg-[#fbd000] px-3 py-2 text-xs text-[#0b0620]">⚙️ โหมด</Link>
           </div>
         </div>
-        <div className="mt-3 grid gap-1 sm:grid-cols-2">
-          {ch.objectives.map((o) => (
-            <p key={o} className="flex gap-1.5 text-xs text-slate-300">
-              <span className="text-yellow-300">★</span>
-              {o}
-            </p>
+
+        <div className="mt-3 border-4 border-[#0b0620] bg-black/25 p-3">
+          <p className="mb-1 font-pixel text-[10px] text-[#fbd000]">🎯 จุดประสงค์การเรียนรู้ (ตาม สสวท.)</p>
+          <ul className="grid gap-1 text-xs text-white/85 sm:grid-cols-2">
+            {chapter.objectives.map((o, k) => (
+              <li key={k} className="flex gap-1">
+                <span className="text-[#fbd000]">▸</span>
+                <span>
+                  <MathText>{o}</MathText>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </header>
+
+      {/* แถบความคืบหน้า + ปุ่มนำทางสเต็ป */}
+      <div className="pixel-box bg-[#120a26] p-3">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="font-pixel text-[10px] text-white/70">STEP {i + 1}/{steps.length}</span>
+          <div className="h-3 flex-1 border-2 border-[#0b0620] bg-black/40">
+            <motion.div className="h-full bg-[#fbd000]" animate={{ width: `${((i + 1) / steps.length) * 100}%` }} transition={{ type: "spring", stiffness: 130, damping: 20 }} />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {steps.map((s, k) => (
+            <button key={s.key} onClick={() => go(k)} className={`pixel-btn px-2 py-1.5 text-[11px] ${k === i ? "bg-[#fbd000] text-[#0b0620]" : "bg-[#2a1a4a] text-white/80"}`}>
+              {s.icon} <span className="hidden sm:inline">{s.title.replace(/^[^-]*—\s*/, "").slice(0, 18)}</span>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* แถบความคืบหน้า */}
-      <div className="mt-5">
-        <div className="mb-1 flex justify-between text-xs font-bold text-slate-700">
-          <span>สเต็ป {step + 1}/{total} — {card.icon} {card.title}</span>
-          <span className="font-pixel text-[9px]">{Math.round(pct)}%</span>
-        </div>
-        <div className="h-4 rounded-sm border-4 border-[#23273a] bg-white">
-          <motion.div
-            className="h-full bg-gradient-to-r from-green-400 to-yellow-400"
-            animate={{ width: `${pct}%` }}
-            transition={{ type: "spring", stiffness: 120, damping: 20 }}
-          />
-        </div>
-      </div>
-
-      {/* การ์ดสเต็ป (แต่ละสเต็ปพื้นหลังคนละโทน + เฟดอิน) */}
-      <AnimatePresence mode="wait">
+      {/* การ์ดสเต็ปปัจจุบัน */}
+      <AnimatePresence mode="wait" custom={dir}>
         <motion.div
-          key={step}
-          initial={{ opacity: 0, y: 26, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -18 }}
-          transition={{ duration: 0.35 }}
-          className={`pixel-card mt-5 p-5 sm:p-7 ${card.color}`}
+          key={cur.key}
+          custom={dir}
+          initial={{ opacity: 0, x: dir * 80 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: dir * -80 }}
+          transition={{ duration: 0.35, ease: [0.2, 0.9, 0.3, 1] }}
         >
-          <div className="flex items-center gap-3">
-            <motion.span
-              className="text-4xl sm:text-5xl"
-              animate={{ y: [0, -6, 0] }}
-              transition={{ repeat: Infinity, duration: 2 }}
-            >
-              {card.icon}
-            </motion.span>
-            <div>
-              <p className="font-pixel text-[9px] text-slate-500">STEP {card.no}</p>
-              <h2 className="text-xl font-extrabold sm:text-2xl">{card.title}</h2>
-            </div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {card.lines.map((line, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -14 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.15 + i * 0.13 }}
-                className={`rounded-sm border-2 border-black/10 bg-white/70 px-3 py-2.5 text-sm font-medium leading-6 sm:text-base ${
-                  card.no === 2 ? "border-4 border-amber-700 bg-yellow-50" : ""
-                }`}
-              >
-                <MathText text={line} />
-              </motion.div>
-            ))}
-          </div>
-          {/* กล่องเหลืองเน้นสูตรของสเต็ป 2 */}
-          {card.no === 2 ? (
-            <p className="mt-3 text-center text-xs font-bold text-amber-800">💾 สูตรในกล่องเหลืองคืออาวุธสำคัญ — จำไว้ใช้ตอนลุยด่าน!</p>
-          ) : null}
+          <StudyCard step={cur} index={i} total={steps.length} />
         </motion.div>
       </AnimatePresence>
 
-      {/* ปุ่มนำทาง */}
-      <div className="mt-6 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => go(-1)}
-          disabled={step === 0}
-          className="pixel-btn rounded-sm bg-slate-200 px-5 py-3 font-pixel text-[10px] text-[#23273a]"
-        >
-          ← ย้อนกลับ
+      {/* ปุ่ม ถัดไป / ย้อนกลับ */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => go(i - 1)} disabled={i === 0} className="pixel-btn bg-[#2a1a4a] px-5 py-3 text-sm text-white">
+          ◀ ย้อนกลับ
         </button>
-        {step < total - 1 ? (
-          <button type="button" onClick={() => go(1)} className="pixel-btn rounded-sm bg-yellow-400 px-6 py-3 font-pixel text-[10px] text-[#23273a]">
-            ถัดไป ➜
+        {i < steps.length - 1 ? (
+          <button onClick={() => go(i + 1)} className="pixel-btn flex-1 bg-[#00a800] px-5 py-3 text-sm text-white">
+            ถัดไป ▶ ({steps[i + 1].icon} {steps[i + 1].title})
           </button>
         ) : (
-          <Link href={`/chapter/${ch.id}/mode`} className="pixel-btn rounded-sm bg-green-400 px-6 py-3 font-pixel text-[10px] text-[#23273a]">
-            เข้าสู่ด่านเกม 🎮
-          </Link>
+          <div className="flex-1">
+            <Link href={`/chapter/${chapter.id}/mode`} className="pixel-btn block w-full bg-[#c84c0c] px-5 py-4 text-center text-sm text-white sm:text-base">
+              🎮 เข้าสู่ด่านเกม — {chapter.title}
+            </Link>
+          </div>
         )}
       </div>
 
-      {/* จุดหมายปลายทาง */}
-      {step === total - 1 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="pixel-card mt-6 bg-white p-4 text-center"
-        >
-          <p className="text-sm font-bold text-slate-700">
-            🎉 จบการปูพื้นฐาน! พร้อมแล้วไปลุย <span className="text-amber-700">ด่านมาริโอ</span>, <span className="text-fuchsia-700">มินิเกม</span>,{" "}
-            <span className="text-sky-700">ตะลุยโจทย์</span> และ <span className="text-red-700">บอสใหญ่</span> ของบทนี้กันเลย
-          </p>
-        </motion.div>
-      ) : null}
-    </main>
+      {/* สูตรย่อของบทนี้ + มินิเกมประจำบท */}
+      <section className="grid gap-3 lg:grid-cols-2">
+        <div className="pixel-box bg-[#120a26] p-4">
+          <h2 className="mb-2 font-pixel text-[11px] text-[#fbd000]">📏 สูตรประจำบท ({chapter.formulas.length})</h2>
+          <ul className="space-y-2">
+            {chapter.formulas.map((f) => (
+              <li key={f.id} className="border-l-4 bg-white/5 px-2 py-1.5" style={{ borderColor: chapter.color }}>
+                <p className="text-xs font-bold text-white">{f.name}</p>
+                <p className="text-[13px] text-white/80">
+                  <MathText>{`\\[${f.tex}\\]`}</MathText>
+                </p>
+                <p className="text-[11px] text-white/60">🧠 {f.memory}</p>
+              </li>
+            ))}
+          </ul>
+          <Link href="/formulas" className="pixel-btn mt-3 inline-block bg-[#2a1a4a] px-3 py-2 text-xs text-white">
+            📚 เปิดคลังสูตรทั้งหมด
+          </Link>
+        </div>
+
+        <div className="pixel-box bg-[#120a26] p-4">
+          <h2 className="mb-2 font-pixel text-[11px] text-[#fbd000]">🕹️ มินิเกมประจำบท</h2>
+          <div className="border-4 border-[#0b0620] p-3" style={{ background: `${chapter.color}33` }}>
+            <p className="text-base font-extrabold text-white">{chapter.miniGame.title}</p>
+            <p className="mt-1 text-xs text-white/85">{chapter.miniGame.desc}</p>
+          </div>
+          <h2 className="mb-2 mt-4 font-pixel text-[11px] text-[#fbd000]">👹 บอสท้ายบท</h2>
+          <div className="border-4 border-[#0b0620] bg-red-900/30 p-3">
+            <p className="text-base font-extrabold text-red-300">{chapter.bossName}</p>
+            <p className="mt-1 text-xs text-white/85">{chapter.bossIntro}</p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href={`/chapter/${chapter.id}/minigame`} className="pixel-btn bg-fuchsia-600 px-3 py-2 text-xs text-white">🕹️ เล่นมินิเกม</Link>
+            <Link href={`/chapter/${chapter.id}/quiz`} className="pixel-btn bg-[#00a800] px-3 py-2 text-xs text-white">📝 แบบทดสอบ</Link>
+            <Link href={`/chapter/${chapter.id}/boss`} className="pixel-btn bg-red-700 px-3 py-2 text-xs text-white">👹 สู้บอส</Link>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

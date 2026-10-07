@@ -1,117 +1,81 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
-@theme {
-  --font-pixel: "Press Start 2P", "Prompt", monospace;
-  --font-thai: "Prompt", ui-sans-serif, system-ui, sans-serif;
+/* ══════════════════════════════════════════════
+   MATH QUEST — ธีมพิกเซล 8-Bit (สีหลัก: ฟ้าท้องฟ้า / อิฐแดง / เหลืองทอง / เขียว)
+   ══════════════════════════════════════════════ */
+:root {
+  --sky: #5c94fc;
+  --brick: #c84c0c;
+  --gold: #fbd000;
+  --green: #00a800;
+  --dark: #1a1030;
+  --ink: #0b0620;
 }
 
-html {
-  scroll-behavior: smooth;
-}
+html, body { background: #0b0620; }
 
 body {
-  background-color: #63c5ff;
-}
-
-/* ===== สไตล์พิกเซล 8-Bit ===== */
-
-/* การ์ดขอบพิกเซลหนา + เงาเรโทร */
-.pixel-card {
-  border: 4px solid #23273a;
-  box-shadow:
-    6px 6px 0 rgba(23, 27, 42, 0.4),
-    inset 0 4px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.08);
-}
-
-/* ปุ่มพิกเซลกดลงได้ */
-.pixel-btn {
-  border: 4px solid #23273a;
-  box-shadow: 0 6px 0 #23273a;
-  transition: transform 0.06s ease, box-shadow 0.06s ease, filter 0.1s;
-  cursor: pointer;
-  user-select: none;
-}
-.pixel-btn:hover {
-  filter: brightness(1.07);
-}
-.pixel-btn:active {
-  transform: translateY(4px);
-  box-shadow: 0 2px 0 #23273a;
-}
-.pixel-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ขอบหนาแบบอิฐ */
-.brick-edge {
-  border: 4px solid #23273a;
-  outline: 4px solid #fff;
-  outline-offset: -8px;
-}
-
-/* กล่องสูตรเหลืองขอบหนา */
-.formula-box {
-  border: 5px solid #b45309;
-  background: #fef3c7;
-  box-shadow: 6px 6px 0 rgba(23, 27, 42, 0.35);
-}
-
-/* พื้นท้องฟ้า + เมฆ */
-.sky-bg {
-  background: linear-gradient(#4aa8f5 0%, #7fd0ff 55%, #b8e8ff 100%);
-}
-
-/* แถบเวลาของโหมดบอส */
-.timebar {
-  transition: width 0.25s linear;
-}
-
-/* อนิเมชันลอยไปมา */
-@keyframes floaty {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-.floaty { animation: floaty 2.4s ease-in-out infinite; }
-
-@keyframes blinkSlow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.blink-slow { animation: blinkSlow 1.2s steps(2) infinite; }
-
-/* ขยายขนาดสมการ KaTeX เล็กน้อยให้อ่านง่าย */
-.katex { font-size: 1.08em; }
-.pixel-head .katex { font-size: 1em; }
-
-/* สั่นเมื่อตอบผิด */
-@keyframes shakeX {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-10px); }
-  40% { transform: translateX(9px); }
-  60% { transform: translateX(-7px); }
-  80% { transform: translateX(5px); }
-}
-.shake { animation: shakeX 0.45s ease; }
-
-/* วาบเขียวเมื่อตอบถูก */
-@keyframes flashGreen {
-  0% { background-color: rgba(34, 197, 94, 0.55); }
-  100% { background-color: transparent; }
-}
-.flash-green { animation: flashGreen 0.9s ease; }
-
-/* หัวใจแตก */
-@keyframes heartPop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.5); }
-  100% { transform: scale(1); }
-}
-.heart-pop { animation: heartPop 0.5s ease; }
-
-/* Canvas เกมห้ามเบลอ */
-canvas.game-canvas {
+  font-family: "Prompt", "Sarabun", system-ui, sans-serif;
+  color: #f8f8ff;
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
 }
+
+.font-pixel { font-family: "Press Start 2P", "Prompt", monospace; letter-spacing: 0.5px; }
+
+/* ขอบพิกเซลหนา + เงาเรโทร */
+.pixel-border {
+  border: 4px solid var(--ink);
+  box-shadow: 0 0 0 4px #ffffff22, 6px 6px 0 4px #00000066;
+}
+.pixel-box {
+  border: 4px solid var(--ink);
+  box-shadow: inset 0 0 0 3px #ffffff30, 5px 5px 0 0 #00000088;
+}
+.pixel-btn {
+  border: 4px solid var(--ink);
+  box-shadow: inset -4px -4px 0 0 #00000044, inset 4px 4px 0 0 #ffffff55, 4px 4px 0 0 #00000099;
+  transition: transform 0.08s steps(2), box-shadow 0.08s steps(2);
+  font-family: "Prompt", sans-serif;
+  font-weight: 700;
+}
+.pixel-btn:active { transform: translate(3px, 3px); box-shadow: inset -2px -2px 0 0 #00000044, 1px 1px 0 0 #00000099; }
+.pixel-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* พื้นหลังท้องฟ้า + เมฆพิกเซล */
+.sky-bg {
+  background:
+    radial-gradient(circle at 15% 20%, #ffffff55 0 12px, transparent 13px),
+    radial-gradient(circle at 70% 12%, #ffffff44 0 16px, transparent 17px),
+    linear-gradient(#5c94fc 0%, #7fb2ff 55%, #a8d8ff 100%);
+}
+.grid-bg {
+  background-image: linear-gradient(#ffffff12 1px, transparent 1px), linear-gradient(90deg, #ffffff12 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.scanline::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, #00000022 0 1px, transparent 1px 3px);
+}
+
+/* แถบเลื่อนสไตล์เรโทร */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: #1a1030; }
+::-webkit-scrollbar-thumb { background: #fbd000; border: 3px solid #1a1030; }
+
+/* อนิเมชัน 8-bit */
+@keyframes blink8 { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0.25 } }
+.blink { animation: blink8 1s steps(1) infinite; }
+@keyframes floaty { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-8px) } }
+.floaty { animation: floaty 2.4s steps(6) infinite; }
+@keyframes coinSpin { 0% { transform: scaleX(1) } 50% { transform: scaleX(0.2) } 100% { transform: scaleX(1) } }
+.coin-spin { animation: coinSpin 0.7s steps(6) infinite; }
+@keyframes shake8 { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-8px) } 40% { transform: translateX(8px) } 60% { transform: translateX(-6px) } 80% { transform: translateX(6px) } }
+.shake { animation: shake8 0.4s steps(2) 2; }
+@keyframes popIn { 0% { transform: scale(0.6) translateY(30px); opacity: 0 } 60% { transform: scale(1.06) translateY(-6px); opacity: 1 } 100% { transform: scale(1) translateY(0) } }
+.pop-in { animation: popIn 0.35s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes heartBreak { 0% { transform: scale(1); opacity: 1 } 50% { transform: scale(1.3) rotate(-8deg); opacity: .5 } 100% { transform: scale(.7); opacity: .25 } }
+.heart-lost { animation: heartBreak .5s steps(4) forwards; }
+
+.katex { font-size: 1.06em; }
+.katex-display { margin: .5em 0; overflow-x: auto; overflow-y: hidden; }

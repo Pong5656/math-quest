@@ -1,107 +1,106 @@
 "use client";
-
-// ===== คลังสูตร: ค้นหา + กรองตามบท + วิธีจำ + พิสูจน์ย่อ + ตัวอย่าง =====
-
+// ══════════════════════════════════════════════════════════
+// คลังสูตร (/formulas) — ค้นหา + กรองตามชั้น/เล่ม/บท
+// การ์ด = สูตร KaTeX + วิธีจำ (mnemonic) + พิสูจน์ย่อ + ตัวอย่าง 1 ข้อ
+// ══════════════════════════════════════════════════════════
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import type { Formula } from "@/lib/types";
-import { ALL_CHAPTERS } from "@/data";
-import MathText from "@/components/MathText";
+import { ALL_FORMULAS, CHAPTERS, LEVELS } from "@/data";
+import FormulaCard from "@/components/FormulaCard";
+import MathText from "@/lib/math";
 
-function FormulaCard({ f, chTitle, chEmoji }: { f: Formula; chTitle: string; chEmoji: string }) {
-  return (
-    <div className="pixel-card flex h-full flex-col bg-white p-4">
-      <div className="flex items-center gap-2">
-        <span className="text-xl">{chEmoji}</span>
-        <p className="text-xs font-bold text-slate-500">{chTitle}</p>
-      </div>
-      <p className="mt-2 text-base font-extrabold">{f.name}</p>
-      {/* สูตรหลักในกล่องเหลือง */}
-      <div className="formula-box mt-2 overflow-x-auto rounded-sm px-3 py-2.5 text-center">
-        <MathText text={`$$${f.latex}$$`} />
-      </div>
-      <div className="mt-3 space-y-2 text-sm">
-        <div className="rounded-sm border-2 border-green-700 bg-green-100 px-3 py-2">
-          <p className="text-xs font-extrabold text-green-800">🧠 วิธีจำ</p>
-          <p className="mt-0.5 font-medium"><MathText text={f.memory} /></p>
-        </div>
-        <div className="rounded-sm border-2 border-sky-700 bg-sky-100 px-3 py-2">
-          <p className="text-xs font-extrabold text-sky-800">🔍 พิสูจน์ย่อ</p>
-          <p className="mt-0.5 font-medium"><MathText text={f.proof} /></p>
-        </div>
-        <div className="rounded-sm border-2 border-amber-700 bg-amber-100 px-3 py-2">
-          <p className="text-xs font-extrabold text-amber-800">✏️ ตัวอย่าง</p>
-          <p className="mt-0.5 font-medium"><MathText text={f.example} /></p>
-          <p className="mt-1 text-xs font-bold text-amber-900">เฉลย: <MathText text={f.ans} /></p>
-        </div>
-      </div>
-    </div>
-  );
-}
+/** ตัดเครื่องหมาย LaTeX เพื่อใช้ค้นหาด้วยคำไทย/อังกฤษ */
+const strip = (s: string) => s.replace(/\\[a-zA-Z]+|[{}\\^_$&]/g, " ").toLowerCase();
 
 export default function FormulasPage() {
-  const [query, setQuery] = useState("");
-  const [chFilter, setChFilter] = useState("all");
+  const [q, setQ] = useState("");
+  const [level, setLevel] = useState<string>("all");
+  const [chapterId, setChapterId] = useState<string>("all");
 
-  const cards = useMemo(() => {
-    const out: { f: Formula; chTitle: string; chEmoji: string; chId: string }[] = [];
-    for (const ch of ALL_CHAPTERS) {
-      if (chFilter !== "all" && ch.id !== chFilter) continue;
-      for (const f of ch.formulas) {
-        const text = `${f.name} ${f.latex} ${f.memory} ${f.proof} ${f.example} ${ch.title}`.toLowerCase();
-        if (query.trim() === "" || text.includes(query.trim().toLowerCase())) {
-          out.push({ f, chTitle: `${ch.grade} ล.${ch.book} · ${ch.short}`, chEmoji: ch.emoji, chId: ch.id });
-        }
-      }
-    }
-    return out;
-  }, [query, chFilter]);
+  const list = useMemo(() => {
+    const key = q.trim().toLowerCase();
+    return ALL_FORMULAS.filter((f) => {
+      if (level !== "all" && f.level !== level) return false;
+      if (chapterId !== "all" && f.chapterId !== chapterId) return false;
+      if (!key) return true;
+      const hay = `${f.name} ${f.memory} ${f.proof} ${f.example} ${strip(f.tex)}`.toLowerCase();
+      return key.split(/\s+/).every((w) => hay.includes(w));
+    });
+  }, [q, level, chapterId]);
+
+  const chapters = chapterId !== "all" ? CHAPTERS.filter((c) => c.id === chapterId) : CHAPTERS.filter((c) => level === "all" || c.level === level);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <h1 className="text-center font-pixel text-sm leading-6 text-[#23273a] sm:text-lg">📜 คลังสูตรคณิตศาสตร์</h1>
-      <p className="mt-2 text-center text-sm font-medium text-slate-700">
-        ครบทุกบท ม.4–ม.6 — ทุกสูตรมีวิธีจำ (mnemonic) พิสูจน์ย่อ และตัวอย่าง 1 ข้อ
+    <div className="space-y-4">
+      <header className="pixel-box bg-gradient-to-r from-yellow-600 to-[#1b1140] p-4">
+        <h1 className="font-pixel text-sm text-[#fbd000] sm:text-base">📚 FORMULA LIBRARY</h1>
+        <p className="mt-1 text-sm text-white/85">
+          คลังสูตรคณิตศาสตร์เพิ่มเติม ม.4–ม.6 ทั้งหมด {ALL_FORMULAS.length} สูตร จาก {CHAPTERS.length} บท — พร้อมวิธีจำ พิสูจน์ย่อ และตัวอย่าง
+        </p>
+      </header>
+
+      {/* ช่องค้นหา + ตัวกรอง */}
+      <div className="pixel-box bg-[#120a26] p-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="🔍 ค้นหาสูตร เช่น ไซน์, อนุกรม, det, ลอการิทึม, Z, คราเมอร์..."
+          className="mb-3 w-full border-4 border-[#0b0620] bg-white px-3 py-2.5 text-sm text-[#1a1030] outline-none placeholder:text-[#1a1030]/50 focus:border-[#fbd000]"
+        />
+        <div className="mb-2 flex flex-wrap gap-2">
+          <span className="self-center text-xs text-white/60">กรองตามชั้น:</span>
+          {["all", ...LEVELS.map((l) => l.id)].map((l) => (
+            <button
+              key={l}
+              onClick={() => {
+                setLevel(l);
+                setChapterId("all");
+              }}
+              className={`pixel-btn px-3 py-1.5 text-xs ${level === l ? "bg-[#fbd000] text-[#0b0620]" : "bg-[#2a1a4a] text-white"}`}
+            >
+              {l === "all" ? "ทั้งหมด" : LEVELS.find((x) => x.id === l)?.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="self-center text-xs text-white/60">กรองตามบท:</span>
+          <button onClick={() => setChapterId("all")} className={`pixel-btn px-3 py-1.5 text-xs ${chapterId === "all" ? "bg-[#00a800] text-white" : "bg-[#2a1a4a] text-white"}`}>
+            ทุกบท
+          </button>
+          {chapters.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setChapterId(c.id)}
+              className={`pixel-btn px-3 py-1.5 text-xs ${chapterId === c.id ? "bg-[#00a800] text-white" : "bg-[#2a1a4a] text-white/85"}`}
+            >
+              {c.emoji} {c.title}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs text-white/60">
+        พบ <b className="text-[#fbd000]">{list.length}</b> สูตร
+        {q && (
+          <>
+            {" "}
+            สำหรับการค้นหา “<MathText>{q}</MathText>”
+          </>
+        )}
       </p>
 
-      {/* แถบค้นหาและกรอง */}
-      <div className="pixel-card mt-6 flex flex-col gap-3 bg-[#fff8e7] p-4 sm:flex-row sm:items-center">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="🔎 ค้นหาสูตร เช่น ไซน์, ลิมิต, det, ครึ่งชีวิต..."
-          className="w-full rounded-sm border-4 border-[#23273a] bg-white px-3 py-2.5 text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-yellow-300"
-        />
-        <select
-          value={chFilter}
-          onChange={(e) => setChFilter(e.target.value)}
-          className="rounded-sm border-4 border-[#23273a] bg-white px-3 py-2.5 text-sm font-bold"
-        >
-          <option value="all">ทุกบท</option>
-          {ALL_CHAPTERS.map((ch) => (
-            <option key={ch.id} value={ch.id}>
-              {ch.grade} ล.{ch.book} — {ch.short}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <p className="mt-4 text-sm font-bold text-slate-700">พบ {cards.length} สูตร</p>
-
-      <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {cards.map((c, i) => (
-          <motion.div key={`${c.chId}-${c.f.name}`} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.04, 0.4) }}>
-            <FormulaCard f={c.f} chTitle={c.chTitle} chEmoji={c.chEmoji} />
-          </motion.div>
+      <motion.div layout className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {list.map((f, i) => (
+          <FormulaCard key={f.id} f={f} index={i} />
         ))}
-      </div>
+      </motion.div>
 
-      {cards.length === 0 ? (
-        <div className="pixel-card mx-auto mt-8 max-w-md bg-white p-6 text-center">
-          <p className="text-3xl">🔍</p>
-          <p className="mt-2 font-bold">ไม่พบสูตรที่ค้นหา ลองเปลี่ยนคำหรือเลือกบทใหม่ดูนะ</p>
+      {list.length === 0 && (
+        <div className="pixel-box bg-[#120a26] p-8 text-center">
+          <p className="text-4xl">🔍</p>
+          <p className="mt-2 text-sm text-white/80">ไม่พบสูตรที่ตรงกับคำค้น ลองใช้คำอื่น เช่น “ไซน์”, “ลิมิต”, “det”, “ความน่าจะเป็น”</p>
         </div>
-      ) : null}
-    </main>
+      )}
+    </div>
   );
 }
